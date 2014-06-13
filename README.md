@@ -4,7 +4,7 @@ In my [blog post](http://blog.soareschen.com/the-problem-with-es6-promises) I hi
 
 Now I have come out with a few solutions to expose these ignored errors, and hopefully make ease of debugging. The solution involves wrapping the promise constructor so that additional probes can be attached to detect incorrect promise usage.
 
-In this demo promises are constructed using a constructor function `createPromise()` instead of the canonical `new Promise()` expression. This is so that the promise constructor can be wrapped and changed at runtime to detect promise-related bugs during development. A default implementation of `createPromise()` is simply calls the native Promise constructor:
+In the examples promises are constructed using a constructor function `createPromise()` instead of the canonical `new Promise()` expression. This is so that the promise constructor can be wrapped and changed at runtime to detect promise-related bugs during development. A default implementation of `createPromise()` is simply calls the native Promise constructor:
 
 ```javascript
 var createPromise = function(construct) {
@@ -14,7 +14,7 @@ var createPromise = function(construct) {
 
 ## Timeout
 
-The simplest kind of promise bug is having the promise never being fulfilled inside a constructor. This could for example happen when a promise creator forgot to implement the promise constructor body:
+The simplest kind of promise bug is having the promise never being fulfilled by the creator. This could for example happen when a promise creator include an empty constructor body:
 
 ```javascript
 createPromise(function(resolve, reject) {
@@ -22,7 +22,7 @@ createPromise(function(resolve, reject) {
 }).then(...)
 ```
 
-This will cause the entire promise chain to halt, and users will have hard time determining the source of the bug. In this way Promise has the same problem as the async callback in which the async function implementor may forget to call the callback:
+This will cause the entire promise chain to halt, and user will have hard time determining the source of the bug. In this way Promise has the same problem as the async callback in which the async function implementor may forget to call the callback:
 
 ```javascript
 var doSomething = function(callback) {
@@ -44,7 +44,7 @@ var timeoutPromise = function(timeout, construct) {
 }
 ```
 
-In this example the timeout promise intercept the `reject` function before forwarding to the constructor caller. It then set a timeout function that reject the promise. In this case the nature of Promise ignoring errors actually work in our favor: if the caller fulfill the promise before the timeout, the reject inside the timeout function is simply silently ignored.
+In this example the timeout promise intercept the `reject` function before forwarding to the constructor caller. It then set a timeout function that reject the promise. In this case the nature of Promise ignoring errors actually work in our favor: if the caller fulfill the promise before timeout, then calling reject inside the timeout function is simply silently ignored.
 
 With this simple trick, if a promise chain ever halt a user can simply detect the bug by changing the `createPromise()` function:
 
@@ -54,7 +54,7 @@ createPromise = function(construct) {
 }
 ```
 
-The full source can be found at [timeout.js](timeout.js), with an example in the end.
+Full source at [timeout.js](timeout.js), with an example in the end.
 
 
 ## Double Fulfill
@@ -109,13 +109,13 @@ var createPromise = function(construct) {
 }
 ```
 
-Ideally though we want such error detection to built right into the native Promise implementation. The `Promise` object should allow error handler to be attached somewhere, so that all promise-related errors can be reported.
+Ideally though we want such error detection to built right into the native Promise implementation. The `Promise` class should allow error handler to be attached somewhere, so that all promise-related errors can be reported.
 
 Full source at [double-fulfill.js](double-fulfill.js)
 
 ## Domain
 
-I find that Promise could also be the perfect replacement of Node's domain. By putting domain inside a promise constructor, one can safely wrap any async functions and ensure all errors being caught and handled as rejection.
+Promise could also be the perfect replacement of Node's domain. By putting domain inside a promise constructor, one can safely wrap any async functions and ensure all errors being caught and handled as rejection.
 
 ```javascript
 var domainLib = require('domain')
@@ -154,7 +154,7 @@ createPromise(function(resolve, reject) {
 })
 ```
 
-But even if a catch handler is attached, exception can still occured inside the catch handler:
+But even if a catch handler is attached, exception can still occur inside the catch handler:
 
 ```javascript
 createPromise(function(resolve, reject) {
@@ -227,10 +227,25 @@ var detectUncaughtPromise = function(promise, timeout, prevCaught) {
 }
 ```
 
-The implementation is a bit long, but what it essentially does is to wrap around a promise's `.then()` and `.catch()` methods to detect whether catch handler is attached to the end of a promise chain. Because a promise might not be chained immediately, a timeout is set before the wrapper checks whether it reach the end of a promise chain. If the wrapper finds itself at the end of promise chain and no catch handler is attached, an error is reported to the error handler together with the stack location of the last `.then()` chain.
+The implementation is a bit long, but what it essentially does is to wrap around a promise's `.then()` and `.catch()` methods to detect whether catch handler is attached to the end of a promise chain. Because a promise might not be chained immediately, a timeout is set before the wrapper checks whether it reach the end of a promise chain. 
+
+If the wrapper finds itself at the end of promise chain and no catch handler is attached, an error is reported to the error handler together with the stack location of the last `.then()` chain. Otherwise the wrapper attach an additional catch handler at the end of promise chain, and use it to report any fatal error to the error handler.
+
+Unlike earlier examples, this function wraps around promise instances. However it needs to be called inside the promise constructor to debug all promises created.
+
+```javascript
+var createPromise = function(construct) {
+  var promise = new Promise(construct)
+  return detectUncaughtPromise(promise, 1000)
+}
+```
+
+A native implementation may be much more efficient in detecting the end of promise chain.
+
+Full source at [uncaught.js](uncaught.js)
 
 # Conclusion
 
-I presented four common bugs that can occur when using promises, all of which are either silently ignored or very hard to debug. I also come out with non-intrusive solutions that will make debugging much easier. Some simplified example code is shown here to demonstrate how the solution could be implemented. Ultimately these solutions should be standardized and implemented natively in ES6 Promise.
+I presented four common bugs that can occur when using promises, all of which are either silently ignored or very hard to debug with current standard. I also come out with non-intrusive solutions that will make such debugging much easier. Some simplified example code is shown here to demonstrate how the solution could be implemented. Ultimately these solutions should be standardized and implemented natively in ES6 Promise.
 
 This article is intended as a start to spark discussion with the JavaScript community to improve Promise before ES6 is finalized.
